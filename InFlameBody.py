@@ -1,7 +1,6 @@
 #  8537827750:AAH7IXmQNNNdX3RQOg4REm5BFnCMYtqjK5s
 
 import logging
-import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 
@@ -60,11 +59,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # --- Обработка третьего уровня для юрлица ---
     elif choice == 'entity_legal':
-        USER_STATE[user_id] = 'waiting_for_inn'
+        USER_STATE[user_id] = 'waiting_for_company_name'
         await query.edit_message_text(text="Напишите ваш ИНН:")
-    elif choice in ['entity_ip', 'entity_self']:
-        # Для простоты, другие типы сразу завершаются
-        await query.edit_message_text(text=f"Выбрана форма: {choice.replace('entity_', '').title()}. Скоро с вами свяжутся.")
+    elif choice == 'entity_ip':
+        USER_STATE[user_id] = 'waiting_for_details_ip'
+        await query.edit_message_text(text="Спасибо! Пожалуйста, укажите ваши данные для связи и реквизиты ИП.")
+    elif choice == 'entity_self':
+        USER_STATE[user_id] = 'waiting_for_details_self'
+        await query.edit_message_text(text="Спасибо! Пожалуйста, укажите ваши данные для связи и информацию о самозанятости.")
 
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -73,39 +75,24 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     text = update.effective_message.text.strip()
 
     if USER_STATE.get(user_id) == 'waiting_for_inn':
-        # Проверяем, является ли текст ИНН (обычно 10 или 12 цифр)
+        # Просто подтверждаем получение ИНН, не проверяя его
         if not text.isdigit():
-            await update.effective_message.reply_text("ИНН должен содержать только цифры. Попробуйте снова.")
+            await update.effective_message.reply_text("Пожалуйста, введите корректный ИНН (цифры).")
             return
 
         inn = text
-        # Запрос к API ФНС
-        try:
-            search_url = 'https://egrul.nalog.ru/search'
-            payload = {'query': inn}
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            response = requests.post(search_url, data=payload, headers=headers)
-            search_results = response.json()
-
-            if search_results.get('total') > 0:
-                first_result_guid = search_results['rows'][0]['g']
-                
-                # Запрос деталей по GUID
-                details_url = f'https://egrul.nalog.ru/get/{first_result_guid}'
-                details_response = requests.get(details_url, headers=headers)
-                details = details_response.json()
-
-                full_name = details['result'][0].get('n', 'Наименование не найдено')
-                await update.effective_message.reply_text(f"Найдено юридическое лицо:\n{full_name}")
-            else:
-                await update.effective_message.reply_text("Юридическое лицо с таким ИНН не найдено.")
-        except Exception as e:
-            logger.error(f"Ошибка при запросе к API ФНС: {e}")
-            await update.effective_message.reply_text("Произошла ошибка при поиске по ИНН. Попробуйте позже или свяжитесь с нами.")
-
+        await update.effective_message.reply_text(f"Спасибо! Ваш ИНН: {inn}. Мы свяжемся с вами для обсуждения условий сотрудничества.")
         # Сброс состояния после обработки
+        USER_STATE.pop(user_id, None)
+    
+    # Заглушка для ИП
+    elif USER_STATE.get(user_id) == 'waiting_for_details_ip':
+        await update.effective_message.reply_text("Спасибо за предоставленную информацию! Мы свяжемся с вами для обсуждения условий сотрудничества.")
+        USER_STATE.pop(user_id, None)
+
+    # Заглушка для физлица
+    elif USER_STATE.get(user_id) == 'waiting_for_details_self':
+        await update.effective_message.reply_text("Спасибо за предоставленную информацию! Мы свяжемся с вами для обсуждения условий сотрудничества.")
         USER_STATE.pop(user_id, None)
 
 
